@@ -25,14 +25,16 @@ test('Pages invokes authentication for every route and denies files without cred
   assert.deepEqual(routes, { version: 1, include: ['/*'], exclude: [] });
   const home = await send('/');
   assert.equal(home.status, 401);
-  assert.match(await home.text(), /访问密钥/);
+  const loginHtml = await home.text();
+  assert.match(loginHtml, /访问密钥/);
+  assert.doesNotMatch(loginHtml, /部署者|保留登录状态/);
   for (const path of ['/index.html', '/assets/app.js', '/assets/importer.mjs', '/_worker.js']) {
     assert.equal((await send(path)).status, 401);
     assert.equal((await send(path, { method: 'HEAD' })).status, 401);
   }
   const pendingSetup = await send('/assets/app.js', {}, { ...env, DUTY_SESSION_KEY: undefined });
   assert.equal(pendingSetup.status, 503);
-  assert.match(await pendingSetup.text(), /README/);
+  assert.equal(await pendingSetup.text(), '值班工作台暂不可用。');
 });
 
 test('login form accepts and submits a Chinese access key', async () => {

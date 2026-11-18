@@ -73,7 +73,7 @@ test('shared tables reject anonymous and cross-origin writes and accept only sha
   assert.deepEqual(counts.map((entry) => entry.results[0].n), [0, 0]);
 });
 
-test('browser storage retains personal history and removes legacy rosters after migration', (t) => {
+test('browser storage retains only personal history and strips old shared data', (t) => {
   let stored = JSON.stringify({ ...personal, schedules: [schedule] });
   t.mock.method(globalThis, 'fetch', () => assert.fail('Local storage should not make network requests'));
   const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
@@ -83,7 +83,8 @@ test('browser storage retains personal history and removes legacy rosters after 
     else delete globalThis.localStorage;
   });
   const loaded = readPersonal();
-  assert.deepEqual(loaded, { ...personal, legacySchedules: [schedule] });
-  writePersonal({ ...loaded, legacySchedules: [], schedules: [schedule], shared: { directory: [schedule] } });
-  assert.deepEqual(JSON.parse(stored), personal);
+  assert.deepEqual(loaded, { drafts: personal.drafts });
+  const next = { otherDay: { notes: '第二个班次' } };
+  writePersonal({ drafts: next, schedules: [schedule], directory: personal.directory });
+  assert.deepEqual(JSON.parse(stored), { drafts: { ...personal.drafts, ...next } });
 });

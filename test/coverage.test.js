@@ -41,6 +41,22 @@ test('attendance separates leave, cover, shift exchange, and people outside the 
   for (const line of ['本班应到 4人，实到 3人', 'A：组长甲', 'B多：队员戊', 'C：队员己', 'D：队员丁', '替班：队员戊替队员乙', '换班：队员己换队员丙', '请假：队员甲预请假转请假', '②优秀队员：组长甲', '失物：值班台 平板1台', '①示例部门队长访客甲请假', '纪律条例抽查：抽查通过', '意见反馈：复习路线', '感想：注意进度', '已在值班前两小时提醒队员值班', '本班次已玩游戏', '收到队员己、组长甲队谱']) assert.ok(text.split('\n').includes(line), line);
 });
 
+test('clearing zones returns roster presets and manual assignments to the unassigned list', () => {
+  const session = { members: ['组长甲', '队员甲', '队员乙'], areas: { A: ['组长甲', '队员甲'] } };
+  const draft = {
+    ...newDraft(), assignments: { 队员乙: 'D' }, changes: [{ type: '请假', outgoing: '队员甲' }],
+  };
+  assert.deepEqual(attendance(session, draft).unassigned, []);
+  const cleared = { ...draft, assignments: {}, ignoreScheduledAreas: true };
+  const counts = attendance(session, cleared);
+  assert.deepEqual(counts.unassigned, ['组长甲', '队员乙']);
+  assert.deepEqual(counts.leaves, ['队员甲']);
+  assert.ok(AREAS.every((area) => counts.areas[area].length === 0));
+  const reassigned = attendance(session, { ...cleared, assignments: { 组长甲: 'B多' } });
+  assert.deepEqual(reassigned.areas.B多, ['组长甲']);
+  assert.deepEqual(reassigned.unassigned, ['队员乙']);
+});
+
 test('roster picks list only leads, prefer this shift, and limit relief to other effective shifts', () => {
   const weekly = {
     name: '周排班', start: '2026-11-16', end: '2026-11-22', sessions: [

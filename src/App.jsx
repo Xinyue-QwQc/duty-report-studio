@@ -16,21 +16,11 @@ function shiftOnDate(schedules, date, current) {
   return SHIFTS.find((shift) => sessionFor(schedules, date, shift)) ?? (currentIsSelectable ? current : SHIFTS[0]);
 }
 
-function rememberGuest(directory, record) {
-  const existing = directory.find((role) => roleKey(role) === roleKey(record));
-  const entry = {
-    department: record.department, position: record.position,
-    people: unique([record.person, ...(existing?.people || [])]),
-    actions: unique([record.action, ...(existing?.actions || [])]),
-  };
-  return existing ? directory.map((role) => roleKey(role) === roleKey(record) ? entry : role) : [...directory, entry];
-}
-
 function TextForm({ title, value, onClose, onSave }) {
   const [text, setText] = useState(value);
   return <Modal title={title} onClose={onClose}>
     <div className="dialog-body">
-      <Field label="正文"><textarea rows="4" value={text} onChange={(event) => setText(event.target.value)} placeholder="每条单独一行" /></Field>
+      <Field label="正文"><textarea rows="4" value={text} onChange={(event) => setText(event.target.value)} /></Field>
       <div className="dialog-actions"><Button onClick={onClose}>取消</Button><Button kind="primary" onClick={() => onSave(text.trim())}>确定</Button></div>
     </div>
   </Modal>;
@@ -41,10 +31,8 @@ function SmallRecords({ items, onRemove }) {
   return <div className="records">{items.map((item, index) => <div className="record" key={`${index}-${item}`}><span>{item}</span><button type="button" className="icon-button" onClick={() => onRemove(index)} aria-label={`移除${item}`}><X size={15} /></button></div>)}</div>;
 }
 
-function DateSetup({ date, shift, reporter, leaders, session, schedules, onDate, onShift, onReporter, onUpload }) {
-  return <Panel title="班次信息" icon={CalendarDays} className="date-panel" action={
-    <span className={`source-status ${session ? 'matched' : ''}`}><span className="status-dot" />{session ? '已匹配值班表' : '手动班次'}</span>
-  }>
+function DateSetup({ date, shift, reporter, leaders, schedules, onDate, onShift, onReporter }) {
+  return <Panel title="班次信息" icon={CalendarDays} className="date-panel">
     <div className="form-grid meta-grid">
       <div className="leader-field-wrap">
         <SelectField label="总结人（组长）" value={reporter} items={leaders} onChange={onReporter}
@@ -59,20 +47,23 @@ function DateSetup({ date, shift, reporter, leaders, session, schedules, onDate,
         <button type="button" className="text-button" onClick={() => onDate(localDate())}>今天</button>
         <button type="button" className="icon-button icon-small" aria-label="后一天" onClick={() => onDate(addDays(date, 1))}><ChevronRight size={17} /></button>
       </div>
-      <span className="roster-source" title={session?.source || ''}><FileSpreadsheet size={14} />{session ? session.source : '所选日期及班次无排班'}</span>
-      {!session && <button type="button" className="text-button" onClick={onUpload}>导入</button>}
     </div>
   </Panel>;
 }
 
-function Staffing({ session, date, shift, history, draft, counts, patch, modal, notice, refreshing, onRefresh }) {
+function Staffing({ session, date, shift, history, draft, counts, patch, modal, notice }) {
   const [selected, setSelected] = useState([]);
   const activeNames = counts.list.map(({ name }) => name);
   const activeSelection = selected.filter((name) => activeNames.includes(name));
   const suggestion = suggestAreas(history, date, shift, activeNames);
-  const selectionNote = activeSelection.length ? `已选 ${activeSelection.length} 人，点击下方区域分配` : '先选择人员，再点击下方的区域名称。';
+  const canApplySuggestion = suggestion && counts.unassigned.some((name) => suggestion.assignments[name]);
   const countRows = [{ label: '应到', value: counts.expected }, { label: '实到', value: counts.actual }, { label: '待分区', value: counts.unassigned.length }];
 
+  const resetAreas = () => {
+    patch({ assignments: {}, ignoreScheduledAreas: true });
+    setSelected([]);
+    notice('已清空分区');
+  };
   const applySuggestion = () => {
     const remaining = new Set(counts.unassigned);
     const applicable = Object.entries(suggestion.assignments).filter(([name]) => remaining.has(name));
@@ -86,12 +77,13 @@ function Staffing({ session, date, shift, history, draft, counts, patch, modal, 
   };
   return <Panel title="人员与分区" icon={Users} action={<div className="staffing-actions">
     {(!session || draft.manualMembers.length > 0) && <Button icon={Plus} onClick={() => modal('members')} className="small">{session ? '编辑补录人员' : '选择排班人员'}</Button>}
-    <Button icon={RefreshCw} onClick={onRefresh} disabled={refreshing} className="small" title="重新读取服务器上的共用排班">{refreshing ? '刷新中…' : '刷新'}</Button>
+    <Button icon={RefreshCw} onClick={resetAreas} className="small" title="清空分区">刷新</Button>
   </div>}>
     <div className="attendance-strip">{countRows.map(({ label, value }, index) => <div key={label} className={`attendance-metric ${index === 2 && value ? 'pending-metric' : ''}`}><span>{label}</span><strong>{value}</strong><small>人</small></div>)}</div>
-    <div className="assign-head"><span>{selectionNote}</span>{suggestion && counts.unassigned.some((name) => suggestion.assignments[name]) && <Button icon={Sparkles} kind="soft" className="small" title={`历史来源 ${formatDate(suggestion.date)}`} onClick={applySuggestion}>套用历史分区</Button>}</div>
-    {counts.unassigned.length > 0 && <Chips label="待分区人员" values={counts.unassigned} selected={activeSelection} onClick={(name) => setSelected((current) => toggle(current, name))} />}
-    {!activeNames.length && <p className="muted empty-line">选择排班人员后即可分配区域。</p>}
+    {counts.unassigned.length > 0 && <div className="unassigned">
+      <div className="unassigned-head"><h3>待分区人员</h3>{canApplySuggestion && <Button icon={Sparkles} kind="soft" className="small" onClick={applySuggestion}>套用历史分区</Button>}</div>
+      <Chips label="待分区人员" values={counts.unassigned} selected={activeSelection} onClick={(name) => setSelected((current) => toggle(current, name))} />
+    </div>}
     <div className="area-grid" aria-label="值班区域">
       {AREAS.map((area, index) => <div className={`area area-${index} ${activeSelection.length ? 'can-assign' : ''}`} key={area}>
         <button type="button" className="area-label" onClick={() => move(area)} disabled={!activeSelection.length} aria-label={`分配至${AREA_LABELS[area]}`}><span>{AREA_LABELS[area]}</span><small>{counts.areas[area].length}</small></button>
@@ -120,9 +112,9 @@ function WorkLog({ draft, patch, modal }) {
     </Panel>
     <Panel title="失物与备注" icon={ClipboardList}>
       <div className="minor-head sub"><h3>失物</h3><Button icon={Plus} kind="ghost" className="small" onClick={() => modal('lost')}>添加失物</Button></div>
-      {draft.lost.length ? <SmallRecords items={draft.lost.map(lostText)} onRemove={(index) => patch({ lost: draft.lost.filter((_, i) => i !== index) })} /> : <p className="muted empty-line">无</p>}
+      <SmallRecords items={draft.lost.map(lostText)} onRemove={(index) => patch({ lost: draft.lost.filter((_, i) => i !== index) })} />
       <div className="minor-head sub"><h3>来访备注</h3><div className="action-cluster"><Button kind="ghost" icon={Plus} className="small" onClick={() => modal('guest', '查岗')}>查岗</Button><Button kind="ghost" icon={Plus} className="small" onClick={() => modal('guest', '体验工作')}>体验工作</Button></div></div>
-      {draft.guests.length ? <SmallRecords items={draft.guests.map(({ department, position, person, action }) => `${department}${position}${person}${action}`)} onRemove={(index) => patch({ guests: draft.guests.filter((_, i) => i !== index) })} /> : <p className="muted empty-line">无</p>}
+      <SmallRecords items={draft.guests.map(({ department, position, person, action }) => `${department}${position}${person}${action}`)} onRemove={(index) => patch({ guests: draft.guests.filter((_, i) => i !== index) })} />
       <RuleRow label="其他备注"><button type="button" className="status-button" onClick={() => modal('text', ['notes', '其他备注'])}>{draft.notes || '无'}<ChevronRight size={15} /></button></RuleRow>
       {briefFields.map(([key, label]) => <RuleRow label={label} key={key}><button type="button" className="status-button" onClick={() => modal('text', [key, label])}>{draft[key] || '无'}<ChevronRight size={15} /></button></RuleRow>)}
     </Panel>
@@ -133,7 +125,7 @@ function Preview({ text, issue, date, shift, copy, goToForm }) {
   const [headline, ...rest] = text.split('\n');
   const highlighted = new Set(['值班区域与人员分配', '值班情况：']);
   return <aside className="preview" id="summary-preview" aria-label="总结预览">
-    <div className="preview-head"><div><span className="preview-icon"><ClipboardList size={19} /></span><h2>总结预览</h2></div><span className={`ready-chip ${issue ? '' : 'ready'}`}><span className="status-dot" />{issue ? '待完善' : '可复制'}</span></div>
+    <div className="preview-head"><span className="preview-icon"><ClipboardList size={19} /></span><h2>总结预览</h2></div>
     <div className="preview-sheet">
       <div className="sheet-content" aria-label="总结正文"><strong>{headline}</strong>{rest.map((line, index) => <div key={index} className={highlighted.has(line) ? 'preview-subtitle' : ''}>{line || ' '}</div>)}</div>
     </div>
@@ -144,27 +136,16 @@ function Preview({ text, issue, date, shift, copy, goToForm }) {
   </aside>;
 }
 
-function FirstUse({ onUpload, onRefresh, refreshing }) {
-  return <Panel title="首次使用" icon={ClipboardList} className="first-use" action={<Button icon={RefreshCw} onClick={onRefresh} disabled={refreshing} className="small">{refreshing ? '刷新中…' : '刷新'}</Button>}>
-    <p>导入值班表后，即可按日期和班次选用组长及值班人员。</p>
-    <ol>
-      <li>选择 DOCX、文字 PDF、Excel 或 CSV 值班表。</li>
-      <li>核对班次和名单，设置生效日期，再保存值班表。</li>
-      <li>选择值班日期和班次，填写并复制日工作总结。</li>
-    </ol>
-    <Button icon={Upload} kind="primary" onClick={onUpload}>导入值班表</Button>
-  </Panel>;
-}
-
 function SchedulePage({ schedules, onTake }) {
-  return <div className="stack manage-page">{schedules.map((schedule) => <Panel key={schedule.id} title={schedule.name} icon={FileSpreadsheet}>
-    <p className="muted calendar-range">{schedule.start} 至 {schedule.end} · {schedule.sessions.length} 条排班</p>
-    <div className="schedule-table" role="table" aria-label={schedule.name}>
-      <div className="schedule-line table-header" role="row"><span role="columnheader">班次</span><span role="columnheader">组长</span><span role="columnheader">值班人员</span><span role="columnheader">应到</span></div>
-      {schedule.sessions.map((session, index) => {
+  if (!schedules.length) return <p role="status">暂无值班表</p>;
+  return <div className="schedule-table" role="table" aria-label="值班表">
+    <div className="schedule-line table-header" role="row"><span role="columnheader">班次</span><span role="columnheader">组长</span><span role="columnheader">值班人员</span><span role="columnheader">应到</span></div>
+    {schedules.map((schedule) => <div key={schedule.id} role="rowgroup">
+      <div className="schedule-period" role="row"><span role="cell" aria-colspan={4}>{schedule.start} 至 {schedule.end}</span></div>
+      {schedule.sessions.map((session) => {
         const day = session.date ? formatDate(session.date) : `周${WEEKDAYS[session.weekday]}`;
         const label = `${day}${session.shift}班`;
-        return <div className="schedule-line" key={index} role="row">
+        return <div className="schedule-line" key={`${session.date || session.weekday}-${session.shift}`} role="row">
           <span role="cell">{SHIFTS.includes(session.shift)
             ? <button type="button" className="text-button" onClick={() => onTake(schedule, session)}>{label}</button>
             : label}</span>
@@ -173,8 +154,8 @@ function SchedulePage({ schedules, onTake }) {
           <strong role="cell">{session.members.length} 人</strong>
         </div>;
       })}
-    </div>
-  </Panel>)}</div>;
+    </div>)}
+  </div>;
 }
 
 function DirectoryPage({ directory, onAdd, onRemove, busy }) {
@@ -183,8 +164,8 @@ function DirectoryPage({ directory, onAdd, onRemove, busy }) {
   const query = filter.trim().toLowerCase();
   const filtered = query ? directory.filter((role) => `${role.department}${role.position}${role.people.join('')}`.toLowerCase().includes(query)) : directory;
   return <div className="stack manage-page">
-    <div className="directory-controls"><input type="search" aria-label="搜索来访人员" placeholder="搜索部门、岗位或姓名" value={filter} onChange={(event) => setFilter(event.target.value)} /><Button kind="primary" icon={Plus} disabled={busy} onClick={() => onAdd({})}>添加共用姓名</Button></div>
-    {!filtered.length && <p className="muted">没有匹配的姓名或岗位。</p>}
+    <div className="directory-controls"><input type="search" aria-label="搜索来访人员" placeholder="搜索部门、岗位或姓名" value={filter} onChange={(event) => setFilter(event.target.value)} /><Button kind="primary" icon={Plus} disabled={busy} onClick={() => onAdd({})}>添加人员</Button></div>
+    {!filtered.length && <p className="muted">{query ? '无搜索结果' : '暂无来访人员'}</p>}
     {departments.filter((department) => filtered.some((role) => role.department === department)).map((department) => <Panel title={department} icon={Users} key={department}>
       {filtered.filter((role) => role.department === department).map((role) => <div className="directory-role" key={role.position}><h3>{role.position}</h3><div className="records">{role.people.map((person) => <div className="record" key={person}><span>{person}</span><button type="button" className="icon-button" disabled={busy} onClick={() => onRemove(role, person)} aria-label={`移除${person}`}><X size={15} /></button></div>)}<Button icon={Plus} kind="ghost" className="small" disabled={busy} onClick={() => onAdd(role)}>补录</Button></div></div>)}
     </Panel>)}
@@ -192,7 +173,10 @@ function DirectoryPage({ directory, onAdd, onRemove, busy }) {
 }
 
 export default function App() {
-  const [data, setData] = useState(readPersonal);
+  const [drafts, setDrafts] = useState({});
+  const [archive] = useState(readPersonal);
+  const lastSaved = useRef({});
+  const rosterFile = useRef(null);
   const [shared, setShared] = useState(null);
   const { schedules, directory } = shared || emptyShared;
   const [sharedBusy, setSharedBusy] = useState(false);
@@ -209,23 +193,13 @@ export default function App() {
   const draftKey = `${date}|${shift}`;
   const session = sessionFor(schedules, date, shift);
   const roster = useMemo(() => rosterPeopleFor(schedules, date, shift), [schedules, date, shift]);
-  const guestDirectory = useMemo(() => {
-    const entries = new Map(directory.map((role) => [roleKey(role), role]));
-    for (const role of data.directory) {
-      const key = roleKey(role);
-      const sharedPeople = entries.get(key)?.people || [];
-      entries.set(key, { ...role, people: unique([...role.people, ...sharedPeople]) });
-    }
-    return [...entries.values()];
-  }, [directory, data.directory]);
-  const externalMembers = new Set(guestDirectory.flatMap(({ people }) => people).filter((name) => !roster.members.has(name)));
-  const history = useMemo(() => Object.entries(data.drafts).map(([key, saved]) => {
+  const externalMembers = new Set(directory.flatMap(({ people }) => people).filter((name) => !roster.members.has(name)));
+  const history = useMemo(() => Object.entries({ ...archive.drafts, ...drafts }).map(([key, saved]) => {
     const [date, shift] = key.split('|');
     return { date, shift, assignments: saved?.assignments || {} };
-  }), [data.drafts]);
-  const hasDrafts = Object.keys(data.drafts).length > 0;
-  const canFill = schedules.length > 0 || hasDrafts;
-  const savedDraft = data.drafts[draftKey] || newDraft();
+  }), [archive, drafts]);
+  const canFill = schedules.length > 0 || Object.keys(drafts).length > 0;
+  const savedDraft = drafts[draftKey] || newDraft();
   const reporter = roster.leaders.includes(savedDraft.reporter) ? savedDraft.reporter : session?.leader || '';
   const draft = { ...savedDraft, reporter };
   const counts = attendance(session, draft, { otherMembers: roster.otherMembers, externalMembers });
@@ -247,7 +221,7 @@ export default function App() {
       if (updateShift) setShift((current) => shiftOnDate(snapshot.schedules, viewedDate.current, current));
       return snapshot;
     } catch (error) {
-      setSharedError(error instanceof TypeError ? '网络连接失败，请重试。' : error.message);
+      setSharedError(error instanceof TypeError ? '网络连接失败。' : error.message);
       return null;
     } finally {
       sharedLock.current = false;
@@ -256,17 +230,25 @@ export default function App() {
   }, []);
   useEffect(() => { void updateShared({ updateShift: true }); }, [updateShared]);
   useEffect(() => {
-    try { writePersonal(data); setStoreError(false); }
-    catch { setStoreError(true); }
-  }, [data]);
+    const onRestore = (event) => {
+      if (event.persisted) window.location.reload();
+    };
+    window.addEventListener('pageshow', onRestore);
+    return () => window.removeEventListener('pageshow', onRestore);
+  }, []);
+  useEffect(() => {
+    try {
+      const changed = Object.entries(drafts).filter(([key, draft]) => draft !== lastSaved.current[key]);
+      writePersonal({ drafts: Object.fromEntries(changed) });
+      lastSaved.current = drafts;
+      setStoreError(false);
+    } catch { setStoreError(true); }
+  }, [drafts]);
   useEffect(() => { if (!toast) return undefined; const timer = setTimeout(() => setToast(''), 3200); return () => clearTimeout(timer); }, [toast]);
   const notice = (message) => setToast(message);
-  const refreshShared = async () => {
-    if (await updateShared({ updateShift: true })) notice('已刷新共用资料');
-  };
-  const patch = (delta) => setData((previous) => ({
+  const patch = (delta) => setDrafts((previous) => ({
     ...previous,
-    drafts: { ...previous.drafts, [draftKey]: { ...(previous.drafts[draftKey] || newDraft()), ...delta } },
+    [draftKey]: { ...(previous[draftKey] || newDraft()), ...delta },
   }));
   const modal = (kind, value) => {
     if (kind === 'upload' || kind === 'directoryGuest') setSharedError('');
@@ -284,18 +266,15 @@ export default function App() {
     catch { notice('剪贴板不可用，可下载 TXT。'); }
   };
   const addGuest = (record) => {
-    setData((previous) => ({
-      ...previous,
-      directory: rememberGuest(previous.directory, record),
-      drafts: { ...previous.drafts, [draftKey]: { ...savedDraft, guests: [...draft.guests.filter((item) => !(item.person === record.person && item.action === record.action && roleKey(item) === roleKey(record))), record] } },
-    }));
+    const guests = draft.guests.filter((item) => !(item.person === record.person && item.action === record.action && roleKey(item) === roleKey(record)));
+    patch({ guests: [...guests, record] });
     close();
     notice('已添加来访备注');
   };
   const editSharedPerson = async ({ department, position, person }, method = 'POST') => {
     if (await updateShared({ path: '/directory', method, body: { department, position, person } })) {
       if (method === 'POST') setOpened((current) => current === opened ? null : current);
-      notice(method === 'POST' ? '已保存共用姓名' : '已移除共用姓名');
+      notice(method === 'POST' ? '已保存' : '已移除');
     }
   };
   const spotlight = () => {
@@ -303,73 +282,70 @@ export default function App() {
     const target = document.querySelector(section);
     target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
-  const saveRoster = async (schedule, legacy = false) => {
+  const chooseRosterFile = () => rosterFile.current.click();
+  const onRosterFile = (event) => {
+    const [file] = event.target.files;
+    event.target.value = '';
+    if (file) {
+      switchTab('schedule');
+      modal('upload', file);
+    }
+  };
+  const saveRoster = async (schedule) => {
     const snapshot = await updateShared({ path: '/schedules', method: 'POST', body: schedulePayload(schedule), updateShift: true });
     if (!snapshot) return;
-    if (legacy) {
-      setData((previous) => ({ ...previous, legacySchedules: previous.legacySchedules.filter(({ id }) => id !== schedule.id) }));
-      notice('已同步旧值班表');
-      return;
-    }
     setOpened((current) => current === opened ? null : current);
-    switchTab('report');
-    notice(`已保存 ${schedule.sessions.length} 条共用排班`);
+    notice('已保存值班表');
   };
 
   return <>
     <header className="topbar"><div className="topbar-inner">
-      <button type="button" className="brand" onClick={() => switchTab('report')}><span className="brand-mark" aria-hidden="true"><ClipboardList size={23} /></span><span>值班工作台<small>日工作总结</small></span></button>
+      <button type="button" className="brand" onClick={() => switchTab('report')}><span className="brand-mark" aria-hidden="true"><ClipboardList size={23} /></span><span>值班工作台</span></button>
       <nav className="nav" aria-label="主导航">
         {[[LayoutGrid, 'report', '填写总结'], [FileSpreadsheet, 'schedule', '值班表'], [Users, 'directory', '来访人员']].map(([Icon, value, label]) => <button key={value} type="button" className={tab === value ? 'current' : ''} aria-current={tab === value ? 'page' : undefined} onClick={() => switchTab(value)}><Icon size={17} />{label}</button>)}
       </nav>
-      <div className="topbar-action"><Button icon={Upload} onClick={() => modal('upload')}>导入值班表</Button></div>
+      {import.meta.env.MODE === 'pages' && <form action="/__access/logout" method="post" className="topbar-action"><button type="submit" className="text-button">退出登录</button></form>}
     </div></header>
     <main className="main">
       <div className="page-intro">
-        <div><h1>{tab === 'report' ? '日工作总结' : tab === 'schedule' ? '值班表' : '来访人员'}</h1>{tab !== 'report' && <p>{tab === 'schedule' ? '查看班次名单，或导入新一轮值班安排。' : '按部门和岗位维护团队共用的来访人员名录。'}</p>}</div>
-        {tab === 'report' && canFill && <div className="intro-side"><div className="day-label"><CalendarDays size={17} />{formatDate(date)}</div><a className="mobile-preview" href="#summary-preview">查看预览 <ArrowRight size={13} /></a></div>}
+        <h1>{tab === 'report' ? '日工作总结' : tab === 'schedule' ? '值班表' : '来访人员'}</h1>
+        {tab === 'report' && canFill && <a className="mobile-preview" href="#summary-preview">查看预览 <ArrowRight size={13} /></a>}
       </div>
-      {storeError && <div className="form-error" role="alert">无法保存到当前浏览器。本次改动仅保留到页面关闭。</div>}
-      {sharedError && !opened && <div className="form-error" role="alert">{sharedError} <Button kind="ghost" className="small" onClick={refreshShared}>重试</Button></div>}
-      {sharedBusy && !shared && <p className="muted" role="status">正在读取共用资料…</p>}
-      {tab !== 'directory' && shared && !schedules.length && <FirstUse onUpload={() => modal('upload')} onRefresh={refreshShared} refreshing={sharedBusy} />}
-      {tab === 'schedule' && data.legacySchedules.length > 0 && <Panel title="本浏览器保存的旧值班表" icon={FileSpreadsheet}>
-        <p className="muted">请核对日期，选择仍需供团队使用的值班表。</p>
-        {data.legacySchedules.map((schedule) => <div className="legacy-roster" key={schedule.id}>
-          <span>{schedule.name || '旧值班表'} · {schedule.start} 至 {schedule.end}</span>
-          <Button icon={Upload} className="small" disabled={sharedBusy} onClick={() => saveRoster(schedule, true)}>同步给团队</Button>
-        </div>)}
-      </Panel>}
-      {tab === 'report' && data.legacySchedules.length > 0 && <p className="muted legacy-link"><button type="button" className="text-button" onClick={() => switchTab('schedule')}>查看本浏览器保存的旧值班表</button></p>}
+      <input ref={rosterFile} type="file" className="visually-hidden" tabIndex={-1} aria-label="值班表文件" accept=".docx,.pdf,.xlsx,.xls,.csv" onChange={onRosterFile} />
+      {storeError && tab === 'report' && <div className="form-error" role="alert">无法保存本机历史。</div>}
+      {sharedError && !opened && <div className="form-error" role="alert">{sharedError} <Button kind="ghost" className="small" onClick={() => updateShared({ updateShift: true })}>重试</Button></div>}
+      {sharedBusy && !shared && <p role="status">加载中…</p>}
+      {tab === 'report' && !canFill && shared && <Button icon={Upload} kind="primary" onClick={chooseRosterFile}>上传值班表</Button>}
       {tab === 'report' && canFill && <div className="workbench">
         <div className="stack work-form">
-          <DateSetup date={date} shift={shift} reporter={reporter} leaders={roster.leaders} session={session} schedules={schedules}
-            onDate={changeDate} onShift={setShift} onReporter={(value) => patch({ reporter: value })} onUpload={() => modal('upload')} />
-          <div id="staffing"><Staffing key={draftKey} session={session} date={date} shift={shift} history={history} draft={draft} counts={counts} patch={patch} modal={modal} notice={notice} refreshing={sharedBusy} onRefresh={refreshShared} /></div>
+          <DateSetup date={date} shift={shift} reporter={reporter} leaders={roster.leaders} schedules={schedules}
+            onDate={changeDate} onShift={setShift} onReporter={(value) => patch({ reporter: value })} />
+          <div id="staffing"><Staffing key={draftKey} session={session} date={date} shift={shift} history={history} draft={draft} counts={counts} patch={patch} modal={modal} notice={notice} /></div>
           <WorkLog draft={draft} patch={patch} modal={modal} />
         </div>
         <Preview text={text} issue={issue} date={date} shift={shift} copy={copy} goToForm={spotlight} />
       </div>}
-      {tab === 'schedule' && schedules.length > 0 && <SchedulePage schedules={schedules} onTake={(schedule, entry) => {
-        const startDay = new Date(`${schedule.start}T00:00:00Z`).getUTCDay();
-        const first = entry.date || addDays(schedule.start, (entry.weekday - startDay + 7) % 7);
-        let found = first;
-        while (!entry.date && found < today && addDays(found, 7) <= schedule.end) found = addDays(found, 7);
-        viewedDate.current = found;
-        setDate(found); setShift(entry.shift); switchTab('report');
-      }} />}
+      {tab === 'schedule' && <div className="stack">
+        <Button className="schedule-upload" icon={Upload} kind="primary" disabled={sharedBusy} onClick={chooseRosterFile}>上传值班表</Button>
+        {shared && <SchedulePage schedules={schedules} onTake={(schedule, entry) => {
+          const startDay = new Date(`${schedule.start}T00:00:00Z`).getUTCDay();
+          const first = entry.date || addDays(schedule.start, (entry.weekday - startDay + 7) % 7);
+          let found = first;
+          while (!entry.date && found < today && addDays(found, 7) <= schedule.end) found = addDays(found, 7);
+          viewedDate.current = found;
+          setDate(found);
+          setShift(entry.shift);
+          switchTab('report');
+        }} />}
+      </div>}
       {tab === 'directory' && <DirectoryPage directory={directory} busy={sharedBusy}
         onAdd={(role) => modal('directoryGuest', role)} onRemove={(role, person) => editSharedPerson({ ...role, person }, 'DELETE')} />}
-      <footer className="footer">
-        <span>值班表和共用来访人员名录由服务器保存。个人草稿、历史填写和从备注记住的姓名仅保存在当前浏览器。</span>
-        {import.meta.env.MODE === 'pages' && <form action="/__access/logout" method="post"><button type="submit" className="text-button">退出登录</button></form>}
-      </footer>
     </main>
-    {opened?.kind === 'upload' && <UploadForm today={today} onClose={close} onSave={saveRoster} saving={sharedBusy} saveError={sharedError} />}
+    {opened?.kind === 'upload' && <UploadForm file={opened.value} today={today} onClose={close} onSave={saveRoster} saving={sharedBusy} saveError={sharedError} />}
     {opened?.kind === 'change' && <ChangeForm type={opened.value} outgoingOptions={outgoingOptions} incomingOptions={incomingOptions} blocked={blocked}
       externalMembers={externalMembers} onClose={close} onSave={(change) => { patch({ changes: [...draft.changes, change] }); close(); }} />}
     {opened?.kind === 'lost' && <LostForm onClose={close} onSave={(item) => { patch({ lost: [...draft.lost, item] }); close(); }} />}
-    {opened?.kind === 'guest' && <GuestForm directory={guestDirectory} initial={{ action: opened.value }} onClose={close} onSave={addGuest} />}
+    {opened?.kind === 'guest' && <GuestForm directory={directory} initial={{ action: opened.value }} onClose={close} onSave={addGuest} />}
     {opened?.kind === 'directoryGuest' && <GuestForm directory={directory} initial={opened.value} onClose={close} onSave={editSharedPerson} saving={sharedBusy} saveError={sharedError} directoryOnly />}
     {opened?.kind === 'members' && <MemberForm title={session ? '编辑补录人员' : '选择本班排班人员'} items={[...roster.members].filter((name) => !session?.members.includes(name))}
       selected={draft.manualMembers} externalMembers={externalMembers} onClose={close} onSave={(members) => { patch({ manualMembers: members }); close(); }} />}

@@ -3,7 +3,7 @@ import { handleShared, isSharedPath } from './shared.js';
 const COOKIE_NAME = '__Host-duty_session';
 const SESSION_SECONDS = 30 * 24 * 60 * 60;
 const LOGIN_PATH = '/__access/login';
-const SETUP_MESSAGE = '值班工作台尚未配置访问密钥。请部署者按仓库 README 设置 Cloudflare Pages 部署密钥，再重新部署。';
+const SETUP_MESSAGE = '值班工作台暂不可用。';
 const LOGOUT_PATH = '/__access/logout';
 const MAX_FORM_BYTES = 2048;
 const encoder = new TextEncoder();
@@ -46,7 +46,6 @@ input,button{width:100%;padding:11px 13px;border-radius:9px;font:inherit}
 input{min-height:46px;border:1px solid #97ad9f;color:inherit}
 button{margin-top:13px;border:0;background:#215b42;color:#fff;font-weight:650;cursor:pointer}
 :focus-visible{outline:3px solid #58a087;outline-offset:3px}
-.hint{margin:12px 0 0;color:#496256;font-size:.86rem}
 .error{padding:8px 11px;border-radius:7px;background:#fff1e8;color:#823918;font-size:.92rem}
 </style></head><body><main>
 <h1>值班工作台</h1>
@@ -54,11 +53,9 @@ ${message ? `<p class="error" role="alert">${message}</p>` : ''}
 <form action="${LOGIN_PATH}" method="post" accept-charset="UTF-8">
 <label>访问密钥
 <input name="key" type="text" inputmode="text" autocomplete="off" autocapitalize="none"
-  autocorrect="off" spellcheck="false" required maxlength="128" aria-describedby="key-hint session-hint">
+  autocorrect="off" spellcheck="false" required maxlength="128">
 </label>
-<p id="key-hint" class="hint">请输入部署者提供的访问密钥，支持粘贴中文。</p>
 <button type="submit">进入工作台</button>
-<p id="session-hint" class="hint">此浏览器会保留登录状态 30 天。</p>
 </form></main></body></html>`, {
     status: 401,
     headers: {

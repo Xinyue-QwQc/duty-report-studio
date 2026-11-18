@@ -11,6 +11,7 @@ export function newDraft() {
     reporter: '',
     manualMembers: [],
     assignments: {},
+    ignoreScheduledAreas: false,
     changes: [],
     guests: [],
     lost: [],
@@ -68,7 +69,9 @@ export function attendance(session, draft, { otherMembers, externalMembers } = {
   }
   const areas = Object.fromEntries(AREAS.map((area) => [area, []]));
   const unassigned = [];
-  const scheduledAreas = Object.fromEntries(AREAS.flatMap((area) => (session?.areas[area] || []).map((name) => [name, area])));
+  const scheduledAreas = draft.ignoreScheduledAreas ? {} : Object.fromEntries(
+    AREAS.flatMap((area) => (session?.areas?.[area] || []).map((name) => [name, area])),
+  );
   for (const { name, original } of list) {
     const area = draft.assignments[name] || draft.assignments[original] || scheduledAreas[original];
     if (AREAS.includes(area)) areas[area].push(name);
