@@ -15,3 +15,4 @@ dist-pages/
 *.zip
 *.txt
 src/data/
+.local-data/

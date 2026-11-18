@@ -1,3 +1,5 @@
+import { handleShared, isSharedPath } from './shared.js';
+
 const COOKIE_NAME = '__Host-duty_session';
 const SESSION_SECONDS = 30 * 24 * 60 * 60;
 const LOGIN_PATH = '/__access/login';
@@ -137,6 +139,7 @@ async function handle(request, env) {
     return login(request, env, url);
   }
   if (await validSession(request, env, url)) {
+    if (isSharedPath(url.pathname)) return handleShared(request, env.SHARED_DB);
     if (request.method === 'GET' || request.method === 'HEAD') {
       const headers = new Headers(request.headers);
       headers.delete('Cookie');

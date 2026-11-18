@@ -107,6 +107,9 @@ textarea { resize: vertical; }
 .minor-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; min-height: 36px; margin-top: 14px; border-top: 1px solid #edf0eb; padding-top: 9px; }
 .minor-head.sub { margin-top: 4px; }
 .minor-head h3, .directory-role h3 { color: #3f5346; font-size: 13px; font-weight: 700; }
+.staffing-actions { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 6px; }
+.legacy-roster { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
+.legacy-link { margin-bottom: 12px; }
 .action-cluster, .records { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 .records { margin-top: 8px; gap: 6px; }
 .record { display: flex; align-items: center; min-width: 0; gap: 4px; background: #f0f5ef; border: 1px solid #e1eade; border-radius: 7px; padding: 3px 5px 3px 8px; font-size: 13px; line-height: 1.3; }

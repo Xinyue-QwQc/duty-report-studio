@@ -6,7 +6,7 @@ import { formatDate, scheduleRange, unique, validDate, WEEKDAYS } from './domain
 
 const CUSTOM = '自定义';
 const labelOf = (session) => `${session.date ? formatDate(session.date) : `周${WEEKDAYS[session.weekday]}`}${session.shift}班`;
-export const roleKey = (role) => `${role.department}|${role.position}`;
+export const roleKey = (role) => JSON.stringify([role.department, role.position]);
 
 export function ChangeForm({ type: initial, outgoingOptions, incomingOptions, blocked, externalMembers, onClose, onSave }) {
   const [type, setType] = useState(initial);
@@ -50,7 +50,7 @@ export function ChangeForm({ type: initial, outgoingOptions, incomingOptions, bl
   </Modal>;
 }
 
-export function GuestForm({ directory, initial = {}, onClose, onSave, directoryOnly = false }) {
+export function GuestForm({ directory, initial = {}, onClose, onSave, directoryOnly = false, saving = false, saveError }) {
   const [action, setAction] = useState(initial.action || '查岗');
   const [department, setDepartment] = useState(initial.department || (directory.length ? '' : CUSTOM));
   const [position, setPosition] = useState(initial.position || (directory.length ? '' : CUSTOM));
@@ -84,8 +84,8 @@ export function GuestForm({ directory, initial = {}, onClose, onSave, directoryO
   };
   const preferredDepartments = unique(directory.filter((role) => role.actions?.includes(action)).map((role) => role.department));
   const departmentItems = unique([...preferredDepartments, ...departments, CUSTOM]);
-  return <Modal title={directoryOnly ? '添加来访人员' : '添加来访备注'} onClose={onClose}>
-    <form className="dialog-body" onSubmit={(event) => { event.preventDefault(); if (valid) onSave({ department: resolvedDepartment, position: resolvedPosition, person: person.trim(), action }); }}>
+  return <Modal title={directoryOnly ? '添加共用来访人员' : '添加来访备注'} onClose={onClose}>
+    <form className="dialog-body" onSubmit={(event) => { event.preventDefault(); if (valid && !saving) onSave({ department: resolvedDepartment, position: resolvedPosition, person: person.trim(), action }); }}>
       {!directoryOnly && <Chips label="来访事项" values={GUEST_ACTIONS} selected={[action]} onClick={setAction} />}
       <div className="form-grid two">
         <SelectField label="部门或队伍" placeholder="请选择" value={department} items={departmentItems} onChange={chooseDepartment} />
@@ -95,8 +95,10 @@ export function GuestForm({ directory, initial = {}, onClose, onSave, directoryO
       {position === CUSTOM && <Field label="岗位名称"><input maxLength={25} value={customPosition} onChange={(event) => setCustomPosition(event.target.value)} /></Field>}
       <NameInput label="姓名" value={person} items={suggestions} onChange={setPerson} />
       {suggestions.length > 0 && <Chips label="已保存的姓名" values={suggestions} selected={[person]} onClick={setPerson} />}
-      {!directoryOnly && person.trim() && !existing?.people.includes(person.trim()) && <small className="muted">新姓名将保存到这个岗位，下次可以直接选择。</small>}
-      <div className="dialog-actions"><Button onClick={onClose}>取消</Button><button type="submit" className="button primary" disabled={!valid}>{directoryOnly ? '保存人员' : '添加备注'}</button></div>
+      {!directoryOnly && person.trim() && !existing?.people.includes(person.trim()) && <small className="muted">新姓名会由本浏览器记住，下次填写备注时可以选用。</small>}
+      {directoryOnly && <small className="muted">保存后，团队成员可以选用此人。</small>}
+      {saveError && <div className="form-error" role="alert">{saveError}</div>}
+      <div className="dialog-actions"><Button onClick={onClose}>取消</Button><button type="submit" className="button primary" disabled={!valid || saving}>{saving ? '保存中…' : directoryOnly ? '保存共用人员' : '添加备注'}</button></div>
     </form>
   </Modal>;
 }
@@ -141,19 +143,21 @@ export function LostForm({ onSave, onClose }) {
   </Modal>;
 }
 
-export function UploadForm({ today, onClose, onSave }) {
+export function UploadForm({ today, onClose, onSave, saving, saveError }) {
   const fileInput = useRef(null);
   const parseSequence = useRef(0);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
+  const [importId, setImportId] = useState('');
   const [parsed, setParsed] = useState(null);
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   async function pickFile(file) {
-    if (!file) return;
+    if (!file || saving) return;
     const token = ++parseSequence.current;
     setParsed(null); setError(''); setFileName(file.name); setPending(true);
+    setImportId(crypto.randomUUID());
     try {
       if (file.size > 12 * 1024 ** 2) throw new Error('请选择 12 MB 以内的值班表。');
       const { parseScheduleFile } = await import('./domain/readers.js');
@@ -170,19 +174,19 @@ export function UploadForm({ today, onClose, onSave }) {
     }
   }
   const inRange = parsed?.sessions.some((session) => !session.date || (session.date >= start && session.date <= end));
-  const valid = parsed && validDate(start) && validDate(end) && start <= end && inRange && !parsed.warnings.length;
+  const valid = !saving && parsed && validDate(start) && validDate(end) && start <= end && inRange && !parsed.warnings.length;
   return <Modal title="导入值班表" onClose={onClose} wide>
     <div className="dialog-body">
       <input ref={fileInput} type="file" id="roster-file" className="visually-hidden" aria-label="选择值班表文件" accept=".docx,.pdf,.xlsx,.xls,.csv" onChange={(event) => { pickFile(event.target.files[0]); event.target.value = ''; }} />
-      <button type="button" className="drop-zone" onClick={() => fileInput.current.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); pickFile(event.dataTransfer.files[0]); }}>
+      <button type="button" className="drop-zone" disabled={saving} onClick={() => fileInput.current.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); pickFile(event.dataTransfer.files[0]); }}>
         <CloudUpload size={27} /><strong>{pending ? '正在读取值班表…' : fileName || '选择文件或将文件拖到这里'}</strong><span>{parsed ? '点击更换文件' : '支持 DOCX、文字 PDF、Excel 和 CSV · 文件在浏览器读取'}</span>
       </button>
       {error && <div className="form-error"><AlertCircle size={16} />{error}</div>}
       {!parsed && <Button icon={FileSpreadsheet} kind="ghost" onClick={() => downloadText('值班表导入模板.csv', `日期,班次,组长,人员,A,B多,B少,C,D\n${today},中午,张三,李四、王五,张三,李四,王五,,\n`)}>下载 CSV 导入模板</Button>}
       {parsed && <>
         <div className="form-grid two">
-          <Field label="生效日期"><input type="date" value={start} onChange={(event) => setStart(event.target.value)} /></Field>
-          <Field label="结束日期"><input type="date" value={end} min={start} onChange={(event) => setEnd(event.target.value)} /></Field>
+          <Field label="生效日期"><input type="date" value={start} disabled={saving} onChange={(event) => { setStart(event.target.value); setImportId(crypto.randomUUID()); }} /></Field>
+          <Field label="结束日期"><input type="date" value={end} min={start} disabled={saving} onChange={(event) => { setEnd(event.target.value); setImportId(crypto.randomUUID()); }} /></Field>
         </div>
         {parsed.sessions.some((session) => !session.date) && <p className="muted">按星期排班的值班表默认从本周开始，请核对生效日期。</p>}
         {!inRange && <div className="form-error">所选日期范围内没有排班。</div>}
@@ -192,7 +196,9 @@ export function UploadForm({ today, onClose, onSave }) {
           {parsed.sessions.map((session, index) => <div key={index} className="import-row"><strong>{labelOf(session)}</strong><span>{session.leader || '未列组长'}</span><span>{session.members.join('、')}</span><b>{session.members.length} 人</b></div>)}
         </div>
       </>}
-      <div className="dialog-actions"><Button onClick={onClose}>取消</Button><Button kind="primary" icon={Upload} disabled={!valid} onClick={() => onSave({ id: crypto.randomUUID(), name: fileName, title: parsed.title, start, end, sessions: parsed.sessions })}>保存值班表</Button></div>
+      {parsed && <p className="muted">保存后，日期、班次和人员安排会同步给团队。</p>}
+      {saveError && <div className="form-error" role="alert">{saveError}</div>}
+      <div className="dialog-actions"><Button onClick={onClose}>取消</Button><Button kind="primary" icon={Upload} disabled={!valid} onClick={() => onSave({ id: importId, start, end, sessions: parsed.sessions })}>{saving ? '保存中…' : '保存值班表'}</Button></div>
     </div>
   </Modal>;
 }

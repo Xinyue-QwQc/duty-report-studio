@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve, sep, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import { localShared } from './local-shared.mjs';
 
 const root = fileURLToPath(new URL('../dist', import.meta.url));
 const address = 'http://127.0.0.1:5173';
@@ -22,7 +23,7 @@ function openApp() {
 try { await readFile(resolve(root, 'index.html')); }
 catch { console.error('没有找到已构建的网页。请先运行 npm run build。'); process.exit(1); }
 
-const server = createServer(async (request, response) => {
+const serveStatic = async (request, response) => {
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     response.writeHead(405).end();
     return;
@@ -45,7 +46,9 @@ const server = createServer(async (request, response) => {
   } catch {
     response.writeHead(404).end();
   }
-});
+};
+const shared = localShared();
+const server = createServer((request, response) => shared(request, response, () => serveStatic(request, response)));
 server.on('error', async (error) => {
   if (error.code === 'EADDRINUSE') {
     const response = await fetch(address, { signal: AbortSignal.timeout(1500) }).catch(() => null);
