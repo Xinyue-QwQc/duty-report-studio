@@ -1,0 +1,17 @@
+node_modules/
+dist/
+dist-pages/
+.dev.vars*
+.env*
+.wrangler/
+*.log
+
+# Local exports and work files
+*.docx
+*.pdf
+*.xls
+*.xlsx
+*.csv
+*.zip
+*.txt
+src/data/

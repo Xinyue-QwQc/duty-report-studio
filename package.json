@@ -1,0 +1,30 @@
+{
+  "name": "duty-report-studio",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
+    "start": "node scripts/serve.mjs",
+    "build": "vite build",
+    "build:pages": "vite build --mode pages --outDir dist-pages && node scripts/build-pages.mjs",
+    "access:keys": "node scripts/generate-access-keys.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "lucide-react": "1.75.0",
+    "mammoth": "1.13.0",
+    "pdfjs-dist": "6.5.438",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "devDependencies": {
+    "jsdom": "^28.1.0",
+    "jszip": "3.10.2",
+    "vite": "8.3.8"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}
